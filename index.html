@@ -32,9 +32,11 @@
 
 <h3>Nội dung thoại (mỗi câu 1 dòng)</h3>
 <textarea id="textOutput" oninput="updateLineCount()" placeholder="Nội dung thoại sẽ hiển thị ở đây..."></textarea>
-<div id="lineCount" style="margin-top:5px; font-size:13px; color:#555;">
+<div id="lineCount"
+     style="margin-top:6px;font-size:13px;color:#555;">
     Số dòng: 0
 </div>
+
 
 <button onclick="exportSRT()">Export SRT đã dịch</button>
 
@@ -43,9 +45,16 @@ let srtBlocks = [];
 let dialogueMap = [];
 
 function updateLineCount() {
-    const text = document.getElementById('textOutput').value;
-    const lines = text === '' ? 0 : text.split('\n').length;
-    document.getElementById('lineCount').innerText = 'Số dòng: ' + lines;
+    const textarea = document.getElementById('textOutput');
+    const value = textarea.value;
+
+    // textarea rỗng → 0 dòng
+    const lines = value.length === 0
+        ? 0
+        : value.split('\n').length;
+
+    document.getElementById('lineCount').innerText =
+        'Số dòng: ' + lines;
 }
 
 // Import SRT
@@ -83,6 +92,7 @@ function parseSRT(content) {
     });
 
     document.getElementById('textOutput').value = dialogues.join('\n');
+    updateLineCount();
 }
 
 // Export SRT
