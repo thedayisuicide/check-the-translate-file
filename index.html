@@ -38,6 +38,8 @@
     </div>
 
     <script>
+        let originalFileName = "subtitle";
+
         const editor = document.getElementById('editor');
         const lineNumbers = document.getElementById('lineNumbers');
         let srtMetadata = [];
@@ -49,6 +51,12 @@
         };
 
         document.getElementById('fileInput').addEventListener('change', function(e) {
+
+            const file = e.target.files[0];
+            if (!file) return;
+            // Lưu tên file gốc (bỏ .srt)
+            originalFileName = file.name.replace(/\.srt$/i, "");
+
             const reader = new FileReader();
             reader.onload = function(e) {
                 const blocks = e.target.result.replace(/\r\n/g, '\n').trim().split(/\n\n+/);
@@ -152,7 +160,8 @@
             }
             const a = document.createElement('a');
             a.href = URL.createObjectURL(new Blob([res], {type:'text/plain'}));
-            a.download = "phude_parallel.srt"; a.click();
+            a.download = `${originalFileName}_translated.srt`;
+            a.click();
         }
     </script>
 </body>
