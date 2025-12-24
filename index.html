@@ -12,13 +12,33 @@ body {
     margin: auto;
 }
 
-textarea {
-    width: 100%;
+.editor {
+    display: flex;
+    border: 1px solid #ccc;
     height: 320px;
+    font-family: Consolas, monospace;
     font-size: 14px;
     line-height: 1.6;
+}
+
+.line-numbers {
+    width: 48px;
+    background: #f5f5f5;
+    color: #888;
+    text-align: right;
+    padding: 6px 6px 6px 0;
+    user-select: none;
+    overflow: hidden;
+}
+
+textarea {
+    flex: 1;
+    border: none;
+    resize: none;
+    padding: 6px;
+    outline: none;
     font-family: Consolas, monospace;
-    white-space: pre;
+    line-height: 1.6;
 }
 
 button {
@@ -34,123 +54,81 @@ button {
 <h2>Import & Translate SRT</h2>
 <input type="file" id="fileInput" accept=".srt">
 
-<h3>Nội dung thoại (index khóa tuyệt đối)</h3>
+<h3>Nội dung thoại (index hiển thị bên trái)</h3>
 
-<textarea id="textOutput"
-placeholder="1  Hello&#10;2  How are you?"></textarea>
+<div class="editor">
+    <div id="lineNumbers" class="line-numbers">1</div>
+    <textarea id="textOutput"
+              placeholder="Hello&#10;How are you?"
+              oninput="updateLineNumbers()"
+              onscroll="syncScroll()"></textarea>
+</div>
 
 <button onclick="exportSRT()">Export SRT đã dịch</button>
 
 <script>
-const textOutput = document.getElementById('textOutput');
-let flatMap = [];
-let internal = false;
+let srtBlocks = [];
 
-/* ========= IMPORT ========= */
+/* ===== LINE NUMBERS ===== */
+function updateLineNumbers() {
+    const textarea = document.getElementById('textOutput');
+    const lines = textarea.value.split('\n').length || 1;
+    let nums = '';
+    for (let i = 1; i <= lines; i++) nums += i + '\n';
+    document.getElementById('lineNumbers').textContent = nums;
+}
+
+function syncScroll() {
+    document.getElementById('lineNumbers').scrollTop =
+        document.getElementById('textOutput').scrollTop;
+}
+
+/* ===== IMPORT SRT ===== */
 document.getElementById('fileInput').addEventListener('change', e => {
     const file = e.target.files[0];
     if (!file) return;
+
     const reader = new FileReader();
     reader.onload = () => parseSRT(reader.result);
     reader.readAsText(file, 'UTF-8');
 });
 
 function parseSRT(content) {
-    flatMap = [];
-    let lines = [];
-    let idx = 1;
+    srtBlocks = [];
+    let dialogues = [];
 
     content.replace(/\r/g, '').split('\n\n').forEach(block => {
-        const parts = block.split('\n');
-        if (parts.length < 3) return;
+        const lines = block.split('\n');
+        if (lines.length < 3) return;
 
-        const timeline = parts[1];
-        parts.slice(2).forEach(text => {
-            flatMap.push({ timeline });
-            lines.push(`${idx}  ${text}`);
-            idx++;
+        const index = lines[0];
+        const timeline = lines[1];
+        const texts = lines.slice(2);
+
+        texts.forEach(text => {
+            srtBlocks.push({ index, timeline });
+            dialogues.push(text);
         });
     });
 
-    internal = true;
-    textOutput.value = lines.join('\n');
-    internal = false;
+    const textarea = document.getElementById('textOutput');
+    textarea.value = dialogues.join('\n');
+    updateLineNumbers();
 }
 
-/* ========= UTILS ========= */
-function getLineInfo(pos) {
-    const before = textOutput.value.slice(0, pos);
-    const lineIndex = before.split('\n').length - 1;
-    const lineStart = before.lastIndexOf('\n') + 1;
-    const line = textOutput.value.split('\n')[lineIndex] || '';
-    const prefixMatch = line.match(/^(\d+\s+)/);
-    const prefixLength = prefixMatch ? prefixMatch[1].length : 0;
-    return { lineStart, prefixLength };
-}
-
-/* ========= CARET LOCK ========= */
-function fixCaret() {
-    const pos = textOutput.selectionStart;
-    const { lineStart, prefixLength } = getLineInfo(pos);
-    const minPos = lineStart + prefixLength;
-
-    if (pos < minPos) {
-        textOutput.selectionStart = textOutput.selectionEnd = minPos;
-    }
-}
-
-textOutput.addEventListener('mousedown', () => {
-    requestAnimationFrame(fixCaret);
-});
-
-textOutput.addEventListener('mouseup', fixCaret);
-textOutput.addEventListener('keydown', e => {
-    const pos = textOutput.selectionStart;
-    const { lineStart, prefixLength } = getLineInfo(pos);
-    const minPos = lineStart + prefixLength;
-
-    // Backspace / Left / Home
-    if (
-        (e.key === 'Backspace' && pos <= minPos) ||
-        (e.key === 'ArrowLeft' && pos <= minPos) ||
-        (e.key === 'Home')
-    ) {
-        e.preventDefault();
-        textOutput.selectionStart = textOutput.selectionEnd = minPos;
-    }
-});
-
-textOutput.addEventListener('input', () => {
-    if (internal) return;
-
-    const lines = textOutput.value.split('\n');
-    const fixed = lines.map((line, i) => {
-        const content = line.replace(/^\s*\d+\s*/, '');
-        return `${i + 1}  ${content}`;
-    });
-
-    internal = true;
-    const caret = textOutput.selectionStart;
-    textOutput.value = fixed.join('\n');
-    textOutput.selectionStart = textOutput.selectionEnd = caret;
-    internal = false;
-
-    fixCaret();
-});
-
-/* ========= EXPORT ========= */
+/* ===== EXPORT SRT ===== */
 function exportSRT() {
-    const lines = textOutput.value.split('\n');
-    if (lines.length !== flatMap.length) {
+    const lines = document.getElementById('textOutput').value.split('\n');
+
+    if (lines.length !== srtBlocks.length) {
         alert('Số dòng không khớp!');
         return;
     }
 
     let out = '';
-    lines.forEach((line, i) => {
-        const text = line.replace(/^\d+\s+/, '');
+    lines.forEach((text, i) => {
         out += (i + 1) + '\n';
-        out += flatMap[i].timeline + '\n';
+        out += srtBlocks[i].timeline + '\n';
         out += text + '\n\n';
     });
 
@@ -162,6 +140,8 @@ function exportSRT() {
     }).click();
     URL.revokeObjectURL(url);
 }
+
+updateLineNumbers();
 </script>
 
 </body>
