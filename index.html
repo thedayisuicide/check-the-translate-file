@@ -18,6 +18,7 @@ textarea {
     font-size: 14px;
     line-height: 1.6;
     font-family: Consolas, monospace;
+    white-space: pre;
 }
 
 button {
@@ -34,7 +35,7 @@ button {
 
 <input type="file" id="fileInput" accept=".srt">
 
-<h3>Nội dung thoại (mỗi dòng có index riêng)</h3>
+<h3>Nội dung thoại (index KHÓA – chỉ dịch text)</h3>
 
 <textarea id="textOutput"
           placeholder="1  Hello&#10;2  How are you?"></textarea>
@@ -42,10 +43,10 @@ button {
 <button onclick="exportSRT()">Export SRT đã dịch</button>
 
 <script>
-let srtBlocks = [];
 let flatMap = [];
+let isInternalUpdate = false;
 
-// Import SRT
+// ================= IMPORT =================
 document.getElementById('fileInput').addEventListener('change', function () {
     const file = this.files[0];
     if (!file) return;
@@ -56,12 +57,11 @@ document.getElementById('fileInput').addEventListener('change', function () {
 });
 
 function parseSRT(content) {
-    srtBlocks = [];
     flatMap = [];
 
     const blocks = content.replace(/\r/g, '').split('\n\n');
-    let outputLines = [];
-    let lineIndex = 1;
+    let output = [];
+    let idx = 1;
 
     blocks.forEach(block => {
         const lines = block.split('\n');
@@ -72,21 +72,50 @@ function parseSRT(content) {
 
         texts.forEach(text => {
             flatMap.push({ timeline });
-            outputLines.push(`${lineIndex}  ${text}`);
-            lineIndex++;
+            output.push(`${idx}  ${text}`);
+            idx++;
         });
     });
 
-    document.getElementById('textOutput').value =
-        outputLines.join('\n');
+    isInternalUpdate = true;
+    textOutput.value = output.join('\n');
+    isInternalUpdate = false;
 }
 
-// Export SRT
+// ================= LOCK INDEX =================
+const textOutput = document.getElementById('textOutput');
+
+textOutput.addEventListener('input', () => {
+    if (isInternalUpdate) return;
+
+    const lines = textOutput.value.split('\n');
+    let fixed = [];
+    let changed = false;
+
+    lines.forEach((line, i) => {
+        const correctPrefix = `${i + 1}  `;
+        const content = line.replace(/^\s*\d+\s*/, '');
+
+        if (!line.startsWith(correctPrefix)) {
+            changed = true;
+            fixed.push(correctPrefix + content);
+        } else {
+            fixed.push(line);
+        }
+    });
+
+    if (changed) {
+        const pos = textOutput.selectionStart;
+        isInternalUpdate = true;
+        textOutput.value = fixed.join('\n');
+        textOutput.selectionStart = textOutput.selectionEnd = pos;
+        isInternalUpdate = false;
+    }
+});
+
+// ================= EXPORT =================
 function exportSRT() {
-    const lines = document
-        .getElementById('textOutput')
-        .value
-        .split('\n');
+    const lines = textOutput.value.split('\n');
 
     if (lines.length !== flatMap.length) {
         alert('Số dòng không khớp!');
@@ -97,7 +126,7 @@ function exportSRT() {
     let srtIndex = 1;
 
     lines.forEach((line, i) => {
-        const text = line.replace(/^\s*\d+\s+/, '');
+        const text = line.replace(/^\s*\d+\s*/, '');
 
         result += srtIndex + '\n';
         result += flatMap[i].timeline + '\n';
@@ -109,6 +138,7 @@ function exportSRT() {
     downloadFile(result, 'translated.srt');
 }
 
+// ================= DOWNLOAD =================
 function downloadFile(content, filename) {
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
