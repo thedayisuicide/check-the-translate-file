@@ -11,8 +11,34 @@
         input[type="password"] { padding: 8px; border: 1px solid #ccc; border-radius: 4px; width: 280px; }
         button { padding: 8px 18px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; }
         .editor-container { display: flex; border: 1px solid var(--border-color); background: #fff; flex-grow: 1; overflow: hidden; border-radius: 6px; }
-        .line-numbers { min-width: 45px; background: var(--line-num-bg); color: var(--line-num-text); text-align: right; padding: 10px 8px; font-family: 'Consolas', monospace; border-right: 1px solid var(--border-color); white-space: pre; }
-        textarea#editor { flex-grow: 1; border: none; padding: 10px; font-family: 'Consolas', monospace; font-size: var(--font-size); line-height: 22px; resize: none; outline: none; white-space: pre; overflow: scroll; }
+        .line-numbers {
+            width: 50px;
+            background-color: var(--line-num-bg);
+            color: var(--line-num-text);
+            text-align: right;
+            padding: 10px 5px; /* Phải khớp với padding của textarea */
+            font-family: var(--font-family);
+            font-size: var(--font-size);
+            line-height: 22px; /* Phải khớp tuyệt đối với textarea */
+            border-right: 1px solid var(--border-color);
+            user-select: none;
+            overflow: hidden; /* Quan trọng để JS điều khiển scrollTop */
+            white-space: pre;
+        }
+
+        textarea#editor {
+            flex-grow: 1;
+            border: none;
+            padding: 10px; /* Khớp với line-numbers */
+            font-family: var(--font-family);
+            font-size: var(--font-size);
+            line-height: 22px; /* Khớp với line-numbers */
+            resize: none;
+            outline: none;
+            white-space: pre;
+            overflow-y: scroll;
+            overflow-x: auto;
+        }
         #progressOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); color: white; justify-content: center; align-items: center; z-index: 1000; flex-direction: column; }
     </style>
 </head>
@@ -43,6 +69,7 @@
         const editor = document.getElementById('editor');
         const lineNumbers = document.getElementById('lineNumbers');
         let srtMetadata = [];
+        
 
         editor.addEventListener('scroll', () => { lineNumbers.scrollTop = editor.scrollTop; });
         const updateLineNumbers = () => {
@@ -97,7 +124,7 @@
             const overlay = document.getElementById('progressOverlay');
             overlay.style.display = 'flex';
             
-            const batchSize = 50;
+            const batchSize = 100;
             const concurrentRequests = 3; // Số lượng API chạy cùng lúc (An toàn cho bản Free)
             let results = new Array(rawLines.length);
             
