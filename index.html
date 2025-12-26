@@ -87,12 +87,16 @@
             const reader = new FileReader();
             reader.onload = function(e) {
                 const blocks = e.target.result.replace(/\r\n/g, '\n').trim().split(/\n\n+/);
-                srtMetadata = []; let display = [];
-                blocks.forEach(block => {
+                srtMetadata = []; 
+                let display = [];
+                
+                blocks.forEach((block, idx) => {
                     const parts = block.split('\n');
                     if(parts.length >= 3) {
                         srtMetadata.push({ index: parts[0], time: parts[1] });
-                        display.push(parts.slice(2).join(' <br> '));
+                        // Thêm số thứ tự vào đầu mỗi dòng hiển thị: "1. Nội dung"
+                        let content = parts.slice(2).join(' <br> ');
+                        display.push(`${srtMetadata.length}. ${content}`);
                     }
                 });
                 editor.value = display.join('\n');
@@ -183,7 +187,10 @@
             const lines = editor.value.split('\n');
             let res = "";
             for (let i = 0; i < Math.min(lines.length, srtMetadata.length); i++) {
-                res += `${srtMetadata[i].index}\n${srtMetadata[i].time}\n${lines[i].replace(/ <br> /g, '\n')}\n\n`;
+                // Loại bỏ số thứ tự "1. " bằng Regex trước khi lưu vào file SRT
+                let cleanContent = lines[i].replace(/^\d+\.\s+/, '');
+                
+                res += `${srtMetadata[i].index}\n${srtMetadata[i].time}\n${cleanContent.replace(/ <br> /g, '\n')}\n\n`;
             }
             const a = document.createElement('a');
             a.href = URL.createObjectURL(new Blob([res], {type:'text/plain'}));
