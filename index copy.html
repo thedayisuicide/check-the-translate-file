@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>SRT AI - Parallel Gemini 3 Flash</title>
+    <style>
+        :root { --bg-color: #ffffff; --line-num-bg: #f5f5f5; --line-num-text: #999; --border-color: #ddd; --font-size: 14px; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 0; padding: 15px; background: #f8f9fa; height: 100vh; display: flex; flex-direction: column; box-sizing: border-box; }
+        .toolbar { margin-bottom: 12px; padding: 15px; background: #fff; border: 1px solid var(--border-color); border-radius: 8px; display: flex; gap: 12px; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .ai-status { background: #e8f0fe; padding: 8px 12px; border-radius: 5px; border: 1px solid #c2d7ff; color: #1967d2; font-weight: bold; font-size: 13px; }
+        input[type="password"] { padding: 8px; border: 1px solid #ccc; border-radius: 4px; width: 280px; }
+        button { padding: 8px 18px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; }
+        .editor-container { display: flex; border: 1px solid var(--border-color); background: #fff; flex-grow: 1; overflow: hidden; border-radius: 6px; }
+        .line-numbers {
+            width: 50px;
+            background-color: var(--line-num-bg);
+            color: var(--line-num-text);
+            text-align: right;
+            padding: 10px 5px; /* Phải khớp với padding của textarea */
+            font-family: var(--font-family);
+            font-size: var(--font-size);
+            line-height: 22px; /* Phải khớp tuyệt đối với textarea */
+            border-right: 1px solid var(--border-color);
+            user-select: none;
+            overflow: hidden; /* Quan trọng để JS điều khiển scrollTop */
+            white-space: pre;
+        }
+
+        textarea#editor {
+            flex-grow: 1;
+            border: none;
+            padding: 10px; /* Khớp với line-numbers */
+            font-family: var(--font-family);
+            font-size: var(--font-size);
+            line-height: 22px; /* Khớp với line-numbers */
+            resize: none;
+            outline: none;
+            white-space: pre;
+            overflow-y: scroll;
+            overflow-x: auto;
+        }
+        #progressOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); color: white; justify-content: center; align-items: center; z-index: 1000; flex-direction: column; }
+    </style>
+</head>
+<body>
+
+    <div class="toolbar">
+        <input type="file" id="fileInput" accept=".srt">
+        <div class="ai-status">⚡ Gemini 3 Flash (Parallel)</div>
+        <input type="password" id="apiKey" placeholder="Dán Gemini API Key...">
+        <button onclick="translateWithAI()">Dịch Tốc Độ Cao</button>
+        <button onclick="downloadSRT()" style="background: #34a853; margin-left: auto;">Lưu File SRT</button>
+    </div>
+
+    <div class="editor-container">
+        <div class="line-numbers" id="lineNumbers">1</div>
+        <textarea id="editor" spellcheck="false"></textarea>
+    </div>
+
+    <div id="progressOverlay">
+        <h2 id="statusText">Đang khởi tạo...</h2>
+        <p id="progressDetail" style="color: #4fc3f7; font-family: monospace;"></p>
+        <div id="retryTimer" style="color: #ffeb3b; font-size: 20px; margin-top: 10px;"></div>
+    </div>
+
+    <script>
+        let originalFileName = "subtitle";
+
+        const editor = document.getElementById('editor');
+        const lineNumbers = document.getElementById('lineNumbers');
+        let srtMetadata = [];
+        
+
+        editor.addEventListener('scroll', () => { lineNumbers.scrollTop = editor.scrollTop; });
+        const updateLineNumbers = () => {
+            const lines = editor.value.split('\n').length;
+            lineNumbers.innerHTML = Array.from({length: lines}, (_, i) => i + 1).join('\n');
+        };
+
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+
+            const file = e.target.files[0];
+            if (!file) return;
+            // Lưu tên file gốc (bỏ .srt)
+            originalFileName = file.name.replace(/\.srt$/i, "");
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const blocks = e.target.result.replace(/\r\n/g, '\n').trim().split(/\n\n+/);
+                srtMetadata = []; 
+                let display = [];
+                
+                blocks.forEach((block, idx) => {
+                    const parts = block.split('\n');
+                    if(parts.length >= 3) {
+                        srtMetadata.push({ index: parts[0], time: parts[1] });
+                        // Thêm số thứ tự vào đầu mỗi dòng hiển thị: "1. Nội dung"
+                        let content = parts.slice(2).join(' <br> ');
+                        display.push(`${srtMetadata.length}. ${content}`);
+                    }
+                });
+                editor.value = display.join('\n');
+                updateLineNumbers();
+            };
+            reader.readAsText(e.target.files[0]);
+        });
+
+        // Hàm gọi API đơn lẻ
+        async function fetchTranslation(batch, key) {
+            const prompt = `Bạn là biên dịch viên phim chuyên nghiệp. Dịch sang tiếng Việt, giữ nguyên 1 dòng ứng với 1 câu, giữ nguyên "<br>", không giải thích:\n\n${batch.join('\n')}`;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${key}`;
+            
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1 } })
+            });
+            const data = await response.json();
+            if (data.error) throw data.error;
+            return data.candidates[0].content.parts[0].text.trim().split('\n').filter(l => l.trim() !== "");
+        }
+
+        async function translateWithAI() {
+            const key = document.getElementById('apiKey').value.trim();
+            const rawLines = editor.value.trim().split('\n');
+            if(!key || rawLines.length === 0) return alert("Thiếu thông tin!");
+
+            const overlay = document.getElementById('progressOverlay');
+            overlay.style.display = 'flex';
+            
+            const batchSize = 60;
+            const concurrentRequests = 3; // Số lượng API chạy cùng lúc (An toàn cho bản Free)
+            let results = new Array(rawLines.length);
+            
+            // Chia nhỏ các dòng thành các cục (chunks)
+            const chunks = [];
+            for (let i = 0; i < rawLines.length; i += batchSize) {
+                chunks.push({
+                    index: i,
+                    data: rawLines.slice(i, i + batchSize)
+                });
+            }
+
+            // Xử lý từng nhóm chunks song song
+            for (let i = 0; i < chunks.length; i += concurrentRequests) {
+                const currentGroup = chunks.slice(i, i + concurrentRequests);
+                document.getElementById('statusText').innerText = `Đang dịch nhóm ${i + 1} - ${Math.min(i + concurrentRequests, chunks.length)} / ${chunks.length}`;
+                
+                try {
+                    const promises = currentGroup.map(chunk => fetchTranslation(chunk.data, key));
+                    const groupResults = await Promise.all(promises);
+                    
+                    groupResults.forEach((translatedLines, groupIdx) => {
+                        const originalIdx = currentGroup[groupIdx].index;
+                        translatedLines.forEach((line, lineIdx) => {
+                            if (originalIdx + lineIdx < results.length) {
+                                results[originalIdx + lineIdx] = line;
+                            }
+                        });
+                    });
+
+                    // Nghỉ 2 giây giữa các nhóm để tránh bị 429
+                    await new Promise(r => setTimeout(r, 2000));
+
+                } catch (err) {
+                    if (err.code === 429) {
+                        document.getElementById('statusText').innerText = "Hết hạn mức, đang chờ reset...";
+                        for (let s = 40; s > 0; s--) {
+                            document.getElementById('retryTimer').innerText = `Thử lại sau ${s} giây`;
+                            await new Promise(r => setTimeout(r, 1000));
+                        }
+                        i -= concurrentRequests; // Thử lại nhóm này
+                        continue;
+                    }
+                    alert("Lỗi: " + err.message);
+                    overlay.style.display = 'none';
+                    return;
+                }
+            }
+
+            editor.value = results.filter(x => x).join('\n');
+            overlay.style.display = 'none';
+            alert("Đã dịch xong tốc độ cao!");
+        }
+
+        function downloadSRT() {
+            const lines = editor.value.split('\n');
+            let res = "";
+            for (let i = 0; i < Math.min(lines.length, srtMetadata.length); i++) {
+                // Loại bỏ số thứ tự "1. " bằng Regex trước khi lưu vào file SRT
+                let cleanContent = lines[i].replace(/^\d+\.\s+/, '');
+                
+                res += `${srtMetadata[i].index}\n${srtMetadata[i].time}\n${cleanContent.replace(/ <br> /g, '\n')}\n\n`;
+            }
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(new Blob([res], {type:'text/plain'}));
+            a.download = `${originalFileName}_translated.srt`;
+            a.click();
+        }
+    </script>
+</body>
+</html>
